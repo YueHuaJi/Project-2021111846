@@ -1,0 +1,100 @@
+import React, { useState, useEffect } from 'react';
+import { Avatar, Layout, Menu, Button, Form, Input, Select } from 'antd';
+import { useNavigate } from 'react-router-dom';
+import '../../styles/doctor.css'; // 导入样式
+
+const { Sider, Content } = Layout;
+const { Option } = Select;
+
+const mockDoctorData = {
+  id: 1,
+  name: '张医生',
+  department: '外科',
+  office: '101',
+  phone: '12345678901',
+  avatar: 'https://api.dicebear.com/7.x/miniavs/svg?seed=1',
+};
+
+const DoctorInfoPage = () => {
+  const navigate = useNavigate();
+  const [form] = Form.useForm();
+  const [doctorData, setDoctorData] = useState(null);
+
+  useEffect(() => {
+    // 模拟从后端获取数据
+    const getDoctorData = async () => {
+      try {
+        // 模拟网络请求延迟
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        // 使用模拟数据
+        const data = mockDoctorData;
+        setDoctorData(data);
+        form.setFieldsValue(data); // 将表单字段设置为获取到的数据
+      } catch (error) {
+        console.error('获取医生个人信息失败:', error.message);
+      }
+    };
+    getDoctorData();
+  }, [form]);
+
+  const handleSave = async () => {
+    try {
+      const values = form.getFieldsValue();
+      // 模拟保存数据到后端
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      console.log('数据已保存:', values);
+    } catch (error) {
+      console.error('保存失败:', error.message);
+    }
+  };
+
+  return (
+    <Layout style={{ height: '100vh' }}>
+      <Sider width={200} className="site-layout-background">
+        <Menu mode="vertical" defaultSelectedKeys={['doctor-info']}>
+          <Menu.Item key="appointment-info">
+            <button className="link-button" onClick={() => navigate('/doctor/appointment-info')}>预约信息</button>
+          </Menu.Item>
+          <Menu.Item key="doctor-info">
+            <button className="link-button" onClick={() => navigate('/doctor/info')}>医生信息</button>
+          </Menu.Item>
+        </Menu>
+      </Sider>
+      <Layout>
+        <Content style={{ padding: '0 24px', minHeight: 280 }}>
+          {doctorData && (
+            <Form form={form} layout="vertical">
+              <Form.Item label="头像" name="avatar">
+                <Avatar src={doctorData.avatar} size={64} />
+              </Form.Item>
+              <Form.Item label="姓名" name="name">
+                <Input />
+              </Form.Item>
+              <Form.Item label="科室" name="department">
+                <Select>
+                  <Option value="外科">外科</Option>
+                  <Option value="内科">内科</Option>
+                  <Option value="妇产科">妇产科</Option>
+                  <Option value="儿科">儿科</Option>
+                </Select>
+              </Form.Item>
+              <Form.Item label="办公室" name="office">
+                <Input />
+              </Form.Item>
+              <Form.Item label="办公电话" name="phone">
+                <Input />
+              </Form.Item>
+              <Form.Item>
+                <Button type="primary" onClick={handleSave}>
+                  确认修改
+                </Button>
+              </Form.Item>
+            </Form>
+          )}
+        </Content>
+      </Layout>
+    </Layout>
+  );
+};
+
+export default DoctorInfoPage;

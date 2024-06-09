@@ -1,0 +1,21 @@
+.site-layout-background {
+    background: #001529;
+  }
+  
+  .ant-menu-dark .ant-menu-item-selected {
+    background-color: #1890ff;
+  }
+  
+  .ant-layout-sider {
+    color: white;
+    text-align: center;
+  }
+  
+  .ant-menu-dark .ant-menu-item a {
+    color: rgba(255, 255, 255, 0.65);
+  }
+  
+  .ant-menu-dark .ant-menu-item-selected a {
+    color: #fff;
+  }
+  
