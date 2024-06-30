@@ -1,3 +1,4 @@
+from pprint import pprint
 from flask import Flask, request, jsonify
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from flask_cors import CORS  # 导入CORS
@@ -24,6 +25,7 @@ def create_tables():
     else:
         print("Admin user already exists.")
 
+    # 检查初始医生是否已经存在
     init_tables()
 
 # 用户登录路由
@@ -151,7 +153,7 @@ def available_doctors():
             "gender": "医生性别",  # string
             "title": "医生职称",  # string
             "department": "医生科室",  # string
-            "office_number": "办公室门牌号",  # string
+            "office": "办公室门牌号",  # string
             "phone": "工作电话",  # string
             "available_times": [
                 {
@@ -185,11 +187,11 @@ def available_doctors():
         for schedule in schedules:
             # 检查用户是否在当前时间段已经预约了这个医生
             morning_appointment = Appointment.query.filter_by(
-                user_id=user_id, doctor_id=doctor.id, appointment_date=datetime.strptime(schedule['date'], "%m月%d日").date(), appointment_period='上午'
+                user_id=user_id, doctor_id=doctor.id, appointment_date=datetime.strptime(schedule['date'], "%m月%d日").date().replace(year=datetime.today().year), appointment_period='上午'
             ).first()
             
             afternoon_appointment = Appointment.query.filter_by(
-                user_id=user_id, doctor_id=doctor.id, appointment_date=datetime.strptime(schedule['date'], "%m月%d日").date(), appointment_period='下午'
+                user_id=user_id, doctor_id=doctor.id, appointment_date=datetime.strptime(schedule['date'], "%m月%d日").date().replace(year=datetime.today().year), appointment_period='下午'
             ).first()
             
             available_times.append({
@@ -218,7 +220,7 @@ def available_doctors():
             'gender': doctor.gender,
             'title': doctor.title,
             'department': doctor.department,
-            'office_number': doctor.office_number,
+            'office': doctor.office_number,
             'phone': doctor.phone,
             'available_times': available_times
         })
@@ -246,6 +248,21 @@ def book_appointment():
     user_id = identity['id']
     data = request.get_json()
     appointment_date = datetime.strptime(data['appointment_date'], "%m月%d日").date().replace(year=datetime.today().year)
+    # 检查医生是否有剩余预约名额
+    schedule = DoctorSchedule.query.filter_by(doctor_id=data['doctor_id'], date=appointment_date).first()
+    if not schedule:
+        return jsonify({"msg": "Schedule not found for the given date"}), 404
+    
+    if data['appointment_period'] == '上午':
+        if schedule.morning_booked >= schedule.morning_limit:
+            return jsonify({"msg": "No available slots in the morning"}), 400
+    elif data['appointment_period'] == '下午':
+        if schedule.afternoon_booked >= schedule.afternoon_limit:
+            return jsonify({"msg": "No available slots in the afternoon"}), 400
+    else:
+        return jsonify({"msg": "Invalid appointment period"}), 400
+    
+    # 进行预约
     appointment = book_doctor(
         user_id=user_id,
         doctor_id=data['doctor_id'],
@@ -374,7 +391,8 @@ def get_doctor_profile():
         "title": "医生职称",  # string
         "department": "医生科室",  # string
         "office_number": "办公室门牌号",  # string
-        "phone": "工作电话"  # string
+        "phone": "工作电话",  # string
+        "flag": "是否有修改医生自己信息的权限"  # bool, optional
     }
     """
     identity = get_jwt_identity()
@@ -389,7 +407,8 @@ def get_doctor_profile():
         'title': doctor.title,
         'department': doctor.department,
         'office': doctor.office_number,
-        'phone': doctor.phone
+        'phone': doctor.phone,
+        'flag': doctor.flag
     }), 200
 
 @app.route('/doctor/schedule', methods=['POST'])
@@ -416,11 +435,24 @@ def set_schedule():
     identity = get_jwt_identity()
     doctor_id = identity['id']
     data = request.get_json()
+    schedules = data['schedules']
+    
+    for schedule_data in schedules:
+        date = datetime.strptime(schedule_data['date'], "%m月%d日").date().replace(year=datetime.today().year)
+        schedule = DoctorSchedule.query.filter_by(doctor_id=doctor_id, date=date).first()
+        
+        if schedule:
+            if schedule_data['morning_limit'] < schedule.morning_booked:
+                return jsonify({'success': False, 'message': f'Morning limit for {schedule_data["date"]} cannot be less than booked appointments'}), 400
+            if schedule_data['afternoon_limit'] < schedule.afternoon_booked:
+                return jsonify({'success': False, 'message': f'Afternoon limit for {schedule_data["date"]} cannot be less than booked appointments'}), 400
+    
     set_doctor_schedule(
         doctor_id=doctor_id,
-        schedules=data['schedules']
+        schedules=schedules
     )
-    return jsonify({'success': True}), 200
+    
+    return jsonify({'success': True, 'message': 'Schedule set successfully'}), 200
 
 @app.route('/doctor/schedule', methods=['GET'])
 @role_required('doctor')
@@ -489,7 +521,7 @@ def update_doctor_info(doctor_id):
         "gender": "医生性别",  # string
         "title": "医生职称",  # string
         "department": "医生科室",  # string
-        "office_number": "办公室门牌号",  # string
+        "office": "办公室门牌号",  # string
         "phone": "工作电话"  # string
     }
     返回数据格式：
@@ -502,11 +534,16 @@ def update_doctor_info(doctor_id):
     doctor = Doctor.query.get(doctor_id)
     if not doctor:
         return jsonify({'error': 'Doctor not found'}), 404
+    
+    # 检查医生是否有权限修改自己的信息
+    if not doctor.flag:
+        return jsonify({'error': 'Permission denied'}), 403
+
     doctor.name = data.get('name', doctor.name)
     doctor.gender = data.get('gender', doctor.gender)
     doctor.title = data.get('title', doctor.title)
     doctor.department = data.get('department', doctor.department)
-    doctor.office_number = data.get('office_number', doctor.office_number)
+    doctor.office_number = data.get('office', doctor.office_number)
     doctor.phone = data.get('phone', doctor.phone)
     db.session.commit()
     return jsonify({'id': doctor.id, 'name': doctor.name}), 200
@@ -515,7 +552,7 @@ def update_doctor_info(doctor_id):
 @role_required('doctor')
 def get_notifications():
     """
-    医生查询未读通知
+    医生查询未读通知（已废弃）
     (这里前端要设置一个长轮询，每隔一段时间就发送一次请求，然后服务器返回未读通知)
 
     返回数据格式：
@@ -536,7 +573,7 @@ def get_notifications():
 @role_required('doctor')
 def mark_notifications_as_read():
     """
-    将通知标记为已读
+    将通知标记为已读(已废弃)
     前端需要发送的数据格式：
     {
         "notification_ids": ["通知ID1", "通知ID2", ...]  # list of int
@@ -573,6 +610,7 @@ def add_doctor():
         "office_number": "办公室门牌号",  # string
         "phone": "工作电话",  # string
         "password": "医生密码"  # string
+        "flag": "是否有修改医生自己信息的权限"  # bool
     }
     返回数据格式：
     {
@@ -589,7 +627,8 @@ def add_doctor():
         department=data['department'],
         office_number=data['office_number'],
         phone=data['phone'],
-        password=data['password']
+        password=data['password'],
+        flag=data.get('flag', False)
     )
     return jsonify({'id': doctor.id, 'name': doctor.name}), 201
 
@@ -605,28 +644,6 @@ def delete_doctor_route(doctor_id):
     """
     success = delete_doctor(doctor_id)
     return jsonify({'success': success}), 200 if success else 404
-
-@app.route('/admin/doctor/<int:doctor_id>/permissions', methods=['PUT'])
-@role_required('admin')
-# 这个暂时不做
-def update_permissions(doctor_id):
-    """
-    管理员更新医生权限
-    前端需要发送的数据格式：
-    {
-        "permissions": "权限JSON字符串"
-    }
-    返回数据格式：
-    {
-        "id": "医生工号",
-        "permissions": "权限JSON字符串"
-    }
-    """
-    data = request.get_json()
-    doctor = update_doctor_permissions(doctor_id, data['permissions'])
-    if doctor:
-        return jsonify({'id': doctor.id, 'permissions': doctor.permissions}), 200
-    return jsonify({'error': 'Doctor not found'}), 404
 
 @app.route('/admin/users', methods=['GET'])
 @role_required('admin')
@@ -686,11 +703,11 @@ def get_doctors():
             "department": "医生科室",  # string
             "office_number": "办公室门牌号",  # string
             "phone": "工作电话"  # string
+            "flag": "是否有修改医生自己信息的权限"  # bool
         },
         ...
     ]
     """
-    print("asdfgh")
     doctors = get_all_doctors()
     result = [
         {
@@ -702,6 +719,7 @@ def get_doctors():
             'office': doctor.office_number or "",  # 确保返回字符串
             'phone': doctor.phone or ""  ,# 确保返回字符串
             'avatar': doctor.avatar if doctor.avatar else "",  # 返回二进制数据，前端需要处理显示，为空则返回空字符串
+            'flag': doctor.flag  # 返回布尔值
         } for doctor in doctors
     ]
     return jsonify(result)
@@ -733,7 +751,6 @@ def get_appointments():
             'doctor_name': doctor.name if doctor else "",  # 确保返回字符串
             'appointment_time': appointment.appointment_date.strftime("%Y-%m-%d") + " " + appointment.appointment_period
         })
-
     return jsonify(result)
 
 @app.route('/admin/appointments/<int:appointment_id>', methods=['DELETE'])
@@ -763,6 +780,7 @@ def update_doctor_info_by_admin_route(doctor_id):
         "office_number": "办公室门牌号",  # string
         "phone": "工作电话",  # string
         "password": "医生密码"  # string, optional
+        "flag": "是否有修改医生自己信息的权限"  # bool, optional
     }
     返回数据格式：
     {
@@ -778,12 +796,13 @@ def update_doctor_info_by_admin_route(doctor_id):
         title=data['title'],
         department=data['department'],
         office_number=data['office'],
-        phone=data['phone']
-        # password=data.get('password')  # Optional
+        phone=data['phone'],
+        password=data.get('password'),  # Optional
+        flag=data['flag']  # Optional
     )
     if doctor:
         return jsonify({'id': doctor.id, 'name': doctor.name}), 200
     return jsonify({'error': 'Doctor not found'}), 404
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)

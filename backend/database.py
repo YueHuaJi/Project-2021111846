@@ -17,7 +17,7 @@ class Doctor(db.Model):
     office_number = db.Column(db.String(20), nullable=False)  # 办公室门牌号，不允许为空
     phone = db.Column(db.String(15), nullable=False)  # 工作电话，不允许为空
     password_hash = db.Column(db.String(128), nullable=False)  # 医生密码的哈希值，不允许为空
-    permissions = db.Column(db.Text, nullable=True)  # 医生权限，JSON 字符串，可以为空
+    flag = db.Column(db.Boolean, default=False, nullable=False)  # 医生权限，Boolean，不可以为空
 
 # 定义医生预约管理时间表的模型类
 class DoctorSchedule(db.Model):
@@ -53,7 +53,7 @@ class Admin(db.Model):
     username = db.Column(db.String(50), unique=True, nullable=False)  # 管理员用户名，唯一且不允许为空
     password_hash = db.Column(db.String(128), nullable=False)  # 管理员密码的哈希值，不允许为空
 
-# 定义通知表的模型类
+# 定义通知表的模型类（已废弃）
 class Notification(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     doctor_id = db.Column(db.Integer, db.ForeignKey('doctor.id'), nullable=False)
@@ -85,7 +85,7 @@ def book_doctor(user_id, doctor_id, appointment_date, appointment_period):
     db.session.add(appointment)
     db.session.commit()
     update_doctor_schedule(doctor_id, appointment_date, appointment_period)
-    create_notification(doctor_id, f'You have a new appointment on {appointment_date.strftime("%m月%d日")} {appointment_period}')
+    # create_notification(doctor_id, f'You have a new appointment on {appointment_date.strftime("%m月%d日")} {appointment_period}')
     return appointment
 
 def update_doctor_schedule(doctor_id, appointment_date, appointment_period):
@@ -121,7 +121,7 @@ def update_doctor_schedule_on_cancel(doctor_id, appointment_date, appointment_pe
 def set_doctor_schedule(doctor_id, schedules):
     """设置医生的空闲时间和每日最大接待病人数量"""
     for schedule_data in schedules:
-        date = datetime.strptime(schedule_data['date'], "%m月%d日").date().replace(year=datetime.today().year)        
+        date = datetime.strptime(schedule_data['date'], "%m月%d日").date().replace(year=datetime.today().year)
         schedule = DoctorSchedule.query.filter_by(doctor_id=doctor_id, date=date).first()
         if not schedule:
             schedule = DoctorSchedule(
@@ -151,37 +151,38 @@ def create_user(name, gender, id_card, phone_number, address, emergency_contact,
     db.session.commit()
     return user
 
-def create_doctor(doctor_id, name, gender, title, department, office_number, phone, password):
+def create_doctor(doctor_id, name, gender, title, department, office_number, phone, password, flag):
     """创建医生"""
     password_hash = generate_password_hash(password)
-    doctor = Doctor(id=doctor_id, name=name, gender=gender, title=title, department=department, office_number=office_number, phone=phone, password_hash=password_hash)
+    doctor = Doctor(id=doctor_id, name=name, gender=gender, title=title, department=department, office_number=office_number, phone=phone, password_hash=password_hash, flag=flag)
     db.session.add(doctor)
     db.session.commit()
+    today = datetime.today().date()
+    schedule = [{'date': (today + timedelta(days=i)).strftime("%m月%d日"), 'morning_limit': 10, 'afternoon_limit': 10} for i in range(3)]
+    set_doctor_schedule(doctor_id, schedule)
     return doctor
 
 def delete_doctor(doctor_id):
     """删除医生"""
     doctor = Doctor.query.get(doctor_id)
     if doctor:
+        # 删除医生的预约管理时间表
+        DoctorSchedule.query.filter_by(doctor_id=doctor_id).delete()
+        
+        # 删除这个医生的预约记录
+        Appointment.query.filter_by(doctor_id=doctor_id).delete()
         db.session.delete(doctor)
         db.session.commit()
         return True
     return False
-
-def update_doctor_permissions(doctor_id, permissions):
-    """更新医生权限"""
-    doctor = Doctor.query.get(doctor_id)
-    if doctor:
-        doctor.permissions = json.dumps(permissions)
-        db.session.commit()
-        return doctor
-    return None
 
 # 删除用户
 def delete_user(user_id):
     """删除用户"""
     user = User.query.get(user_id)
     if user:
+        # 删除用户的预约记录
+        Appointment.query.filter_by(user_id=user_id).delete()
         db.session.delete(user)
         db.session.commit()
         return True
@@ -230,13 +231,13 @@ def get_admin_by_username(username):
     return Admin.query.filter_by(username=username).first()
 
 def create_notification(doctor_id, message):
-    """创建通知消息"""
+    """创建通知消息(已废弃)"""
     notification = Notification(doctor_id=doctor_id, message=message)
     db.session.add(notification)
     db.session.commit()
     return notification
 
-def update_doctor_info_by_admin(doctor_id, name, gender, title, department, office_number, phone, password=None):
+def update_doctor_info_by_admin(doctor_id, name, gender, title, department, office_number, phone, flag,password=None):
     """管理员修改医生信息"""
     doctor = Doctor.query.get(doctor_id)
     if doctor:
@@ -246,12 +247,12 @@ def update_doctor_info_by_admin(doctor_id, name, gender, title, department, offi
         doctor.department = department
         doctor.office_number = office_number
         doctor.phone = phone
+        doctor.flag = flag
         if password:
             doctor.password_hash = generate_password_hash(password)
         db.session.commit()
         return doctor
     return None
-
 
 def init_tables():
     """初始化数据库表"""
@@ -265,7 +266,8 @@ def init_tables():
             'department': '全科医学',
             'office_number': '101',
             'phone': '1234567890',
-            'password': 'password123'
+            'password': 'password123',
+            'flag': True
         },
         {
             'doctor_id': 2,
@@ -275,7 +277,8 @@ def init_tables():
             'department': '内科',
             'office_number': '102',
             'phone': '1234567891',
-            'password': 'password123'
+            'password': 'password123',
+            'flag': False
         },
         {
             'doctor_id': 3,
@@ -285,7 +288,8 @@ def init_tables():
             'department': '外科',
             'office_number': '103',
             'phone': '1234567892',
-            'password': 'password123'
+            'password': 'password123',
+            'flag': False
         },
         {
             'doctor_id': 4,
@@ -295,7 +299,8 @@ def init_tables():
             'department': '儿科',
             'office_number': '104',
             'phone': '1234567893',
-            'password': 'password123'
+            'password': 'password123',
+            'flag': False
         },
         {
             'doctor_id': 5,
@@ -305,7 +310,8 @@ def init_tables():
             'department': '皮肤科',
             'office_number': '105',
             'phone': '1234567894',
-            'password': 'password123'
+            'password': 'password123',
+            'flag': False
         }
     ]
     if not Doctor.query.first():
@@ -319,7 +325,8 @@ def init_tables():
                     department=doctor['department'],
                     office_number=doctor['office_number'],
                     phone=doctor['phone'],
-                    password=doctor['password']
+                    password=doctor['password'],
+                    flag=doctor['flag']
                 )
                 print(f"Doctor {doctor['name']} created.")
             else:
@@ -394,31 +401,31 @@ def init_tables():
         {
             'doctor_id': 1,
             'schedules': [
-                {'date': (today + timedelta(days=i)).strftime("%Y-%m-%d"), 'morning_limit': 10, 'afternoon_limit': 10} for i in range(3)
+                {'date': (today + timedelta(days=i)).strftime("%m月%d日"), 'morning_limit': 10, 'afternoon_limit': 10} for i in range(3)
             ]
         },
         {
             'doctor_id': 2,
             'schedules': [
-                {'date': (today + timedelta(days=i)).strftime("%Y-%m-%d"), 'morning_limit': 8, 'afternoon_limit': 8} for i in range(3)
+                {'date': (today + timedelta(days=i)).strftime("%m月%d日"), 'morning_limit': 8, 'afternoon_limit': 8} for i in range(3)
             ]
         },
         {
             'doctor_id': 3,
             'schedules': [
-                {'date': (today + timedelta(days=i)).strftime("%Y-%m-%d"), 'morning_limit': 5, 'afternoon_limit': 5} for i in range(3)
+                {'date': (today + timedelta(days=i)).strftime("%m月%d日"), 'morning_limit': 5, 'afternoon_limit': 5} for i in range(3)
             ]
         },
         {
             'doctor_id': 4,
             'schedules': [
-                {'date': (today + timedelta(days=i)).strftime("%Y-%m-%d"), 'morning_limit': 7, 'afternoon_limit': 7} for i in range(3)
+                {'date': (today + timedelta(days=i)).strftime("%m月%d日"), 'morning_limit': 7, 'afternoon_limit': 7} for i in range(3)
             ]
         },
         {
             'doctor_id': 5,
             'schedules': [
-                {'date': (today + timedelta(days=i)).strftime("%Y-%m-%d"), 'morning_limit': 6, 'afternoon_limit': 6} for i in range(3)
+                {'date': (today + timedelta(days=i)).strftime("%m月%d日"), 'morning_limit': 6, 'afternoon_limit': 6} for i in range(3)
             ]
         }
     ]
@@ -428,17 +435,18 @@ def init_tables():
 
     # 初始化预约信息
     initial_appointments = [
-        {'user_id': '123456789012345678', 'doctor_id': 1, 'appointment_date': today + timedelta(days=1), 'appointment_period': '上午'},
-        {'user_id': '234567890123456789', 'doctor_id': 2, 'appointment_date': today + timedelta(days=2), 'appointment_period': '下午'},
-        {'user_id': '345678901234567890', 'doctor_id': 3, 'appointment_date': today + timedelta(days=1), 'appointment_period': '上午'},
-        {'user_id': '456789012345678901', 'doctor_id': 4, 'appointment_date': today + timedelta(days=2), 'appointment_period': '下午'},
-        {'user_id': '567890123456789012', 'doctor_id': 5, 'appointment_date': today + timedelta(days=1), 'appointment_period': '上午'}
+        {'user_id': '123456789012345678', 'doctor_id': 1, 'appointment_date': (today + timedelta(days=1)).strftime("%m月%d日"), 'appointment_period': '上午'},
+        {'user_id': '234567890123456789', 'doctor_id': 2, 'appointment_date': (today + timedelta(days=2)).strftime("%m月%d日"), 'appointment_period': '下午'},
+        {'user_id': '345678901234567890', 'doctor_id': 3, 'appointment_date': (today + timedelta(days=1)).strftime("%m月%d日"), 'appointment_period': '上午'},
+        {'user_id': '456789012345678901', 'doctor_id': 4, 'appointment_date': (today + timedelta(days=2)).strftime("%m月%d日"), 'appointment_period': '下午'},
+        {'user_id': '567890123456789012', 'doctor_id': 5, 'appointment_date': (today + timedelta(days=1)).strftime("%m月%d日"), 'appointment_period': '上午'}
     ]
     if not Appointment.query.first():
         for appointment in initial_appointments:
+            appointment_date = datetime.strptime(appointment['appointment_date'], "%m月%d日").date().replace(year=datetime.today().year)
             book_doctor(
                 user_id=appointment['user_id'],
                 doctor_id=appointment['doctor_id'],
-                appointment_date=appointment['appointment_date'],
+                appointment_date=appointment_date,
                 appointment_period=appointment['appointment_period']
             )

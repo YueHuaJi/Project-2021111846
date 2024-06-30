@@ -1,18 +1,18 @@
-import React from 'react';
-import { Form, Input, Button, message } from 'antd';
-import { useNavigate } from 'react-router-dom';
-import '../../styles/styles.css'; // 导入样式
+import React from "react";
+import { Form, Input, Button, message } from "antd";
+import { useNavigate } from "react-router-dom";
+import "../../styles/styles.css"; // 导入样式
 
 const UserLogin = () => {
   const navigate = useNavigate();
 
   const onFinish = async (values) => {
-    console.log('Success:', values);
+    console.log("Success:", values);
     try {
-      const response = await fetch('http://localhost:5000/login/user', {
-        method: 'POST',
+      const response = await fetch("http://121.40.44.68:5000/login/user", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(values),
       });
@@ -22,16 +22,16 @@ const UserLogin = () => {
         const data = await response.json(); // 解析后端返回的 JSON 数据
         const { access_token } = data;
         // 将令牌保存到本地存储
-        localStorage.setItem('token', access_token);
+        localStorage.setItem("token", access_token);
         // 在登录成功后跳转到用户预约页面
-        navigate('/user/appointment');
+        navigate("/user/appointment");
       } else {
         // 登录失败，显示错误消息
-        message.error('身份证号或密码错误');
+        message.error("身份证号或密码错误");
       }
     } catch (error) {
-      console.error('登录失败:', error);
-      message.error('登录失败，请重试');
+      console.error("登录失败:", error);
+      message.error("登录失败，请重试");
     }
   };
 
@@ -43,13 +43,13 @@ const UserLogin = () => {
     >
       <Form.Item
         name="username"
-        rules={[{ required: true, message: '请输入身份证号!' }]}
+        rules={[{ required: true, message: "请输入身份证号!" }]}
       >
         <Input placeholder="身份证号" />
       </Form.Item>
       <Form.Item
         name="password"
-        rules={[{ required: true, message: '请输入密码!' }]}
+        rules={[{ required: true, message: "请输入密码!" }]}
       >
         <Input.Password placeholder="密码" />
       </Form.Item>
@@ -59,7 +59,7 @@ const UserLogin = () => {
         </Button>
       </Form.Item>
       <Form.Item>
-        <Button type="link" onClick={() => navigate('/register')}>
+        <Button type="link" onClick={() => navigate("/register")}>
           注册
         </Button>
       </Form.Item>
